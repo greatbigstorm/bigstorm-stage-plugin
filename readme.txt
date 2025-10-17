@@ -38,6 +38,23 @@ Key features:
 
 Visit your site's robots.txt file (yourdomain.greatbigstorm.com/robots.txt) and verify it contains "Disallow: /". Additionally, when Googlebot or another known crawler requests any page, the server will respond with HTTP 410 (Gone).
 
+= What does the 410 behavior do, and can I customize crawler detection? =
+
+On staging domains ending in .greatbigstorm.com, page requests from known search crawlers (e.g., Googlebot, Bingbot, DuckDuckBot) get an HTTP 410 (Gone) response. This signals that the content should be removed from search results. The plugin still serves a robots.txt with `Disallow: /` so crawlers can read the rule.
+
+You can customize the set of recognized crawlers using the `bigstorm_stage_crawlers` filter:
+
+Example (in a small mu-plugin or your theme's functions.php):
+
+```
+add_filter( 'bigstorm_stage_crawlers', function( $bots ) {
+	$bots[] = 'custombot';
+	// Optionally remove defaults:
+	// $bots = array_diff( $bots, array( 'ahrefsbot', 'semrushbot' ) );
+	return $bots;
+} );
+```
+
 = Will this affect my production site? =
 
 No, the plugin only modifies robots.txt on domains ending with .greatbigstorm.com

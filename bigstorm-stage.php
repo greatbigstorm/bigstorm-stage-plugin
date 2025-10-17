@@ -10,7 +10,7 @@
  * @wordpress-plugin
  * Plugin Name:       Big Storm Staging
  * Plugin URI:        https://www.greatbigstorm.com
- * Description:       Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com. Can be removed once the site is launched to production.
+ * Description:       Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com and returns HTTP 410 (Gone) for page requests from known search crawlers. Can be removed once the site is launched to production.
  * Version:           1.0.0
  * Requires at least: 5.2
  * Requires PHP:      7.2
@@ -30,6 +30,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Main plugin class
  */
 class Big_Storm_Staging {
+	/**
+	 * Plugin slug used for the modal and filters.
+	 *
+	 * @var string
+	 */
+	private $slug;
 
 	/**
 	 * Initialize the plugin
@@ -37,9 +43,16 @@ class Big_Storm_Staging {
 	 * @return void
 	 */
 	public function init() {
+		$this->slug = basename( dirname( __FILE__ ) ); // e.g. 'bigstorm-stage'.
 		add_filter( 'robots_txt', array( $this, 'modify_robots_txt' ), 10, 2 );
 		// Before templates render, potentially return 410 for crawler requests on staging.
 		add_action( 'template_redirect', array( $this, 'maybe_send_410_for_crawlers' ), 0 );
+		// Add a View details link below the description (meta row), like .org plugins.
+		add_filter( 'plugin_row_meta', array( $this, 'plugin_row_meta' ), 10, 2 );
+		// Ensure Thickbox is available on the Plugins screen for the modal.
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+		// Provide data for the modal (like WordPress.org) using the plugins_api filter.
+		add_filter( 'plugins_api', array( $this, 'plugins_api_info' ), 10, 3 );
 	}
 
 	/**
@@ -92,6 +105,115 @@ class Big_Storm_Staging {
 		}
 		
 		return $output;
+	}
+
+	/**
+	 * Add custom action links to the plugin row on the Plugins page.
+	 *
+	 * @param string[] $links Existing action links.
+	 * @return string[] Modified action links.
+	 */
+	/**
+	 * Add a "View details" link to the plugin meta row under the description.
+	 *
+	 * @param string[] $links Meta links.
+	 * @param string   $file  Plugin file path relative to plugins directory.
+	 * @return string[]
+	 */
+	public function plugin_row_meta( $links, $file ) {
+		if ( plugin_basename( __FILE__ ) !== $file ) {
+			return $links;
+		}
+		$modal_url   = self_admin_url( 'plugin-install.php?tab=plugin-information&plugin=' . urlencode( $this->slug ) . '&TB_iframe=true&width=600&height=600' );
+		$details_link = '<a href="' . esc_url( $modal_url ) . '" class="thickbox open-plugin-details-modal">' . esc_html__( 'View details', 'bigstorm-stage' ) . '</a>';
+		$links[] = $details_link;
+		return $links;
+	}
+
+	/**
+	 * Enqueue Thickbox assets on the Plugins screen to support the modal.
+	 *
+	 * @param string $hook Current admin page hook.
+	 * @return void
+	 */
+	public function enqueue_admin_assets( $hook ) {
+		if ( 'plugins.php' === $hook ) {
+			add_thickbox();
+		}
+	}
+
+	/**
+	 * Provide plugin information for the details modal via the plugins_api filter.
+	 *
+	 * @param false|object|array $result The result object or array. Default false.
+	 * @param string             $action The type of information being requested from the Plugin Install API.
+	 * @param object             $args   Plugin API arguments.
+	 * @return object|false
+	 */
+	public function plugins_api_info( $result, $action, $args ) {
+		if ( 'plugin_information' !== $action ) {
+			return $result;
+		}
+		if ( empty( $args->slug ) || $args->slug !== $this->slug ) {
+			return $result;
+		}
+
+		$info            = new stdClass();
+		$info->name      = 'Big Storm Staging';
+		$info->slug      = $this->slug;
+		$info->version   = '1.0.0';
+		$info->author    = '<a href="https://www.greatbigstorm.com">Big Storm</a>';
+		$info->homepage  = 'https://www.greatbigstorm.com';
+		$info->requires  = '5.2';
+		$info->tested    = '6.4';
+		$info->requires_php = '7.2';
+		$info->last_updated  = date_i18n( 'Y-m-d' );
+
+		$sections = $this->load_readme_sections();
+		if ( empty( $sections ) ) {
+			$sections = array(
+				'description'  => wp_kses_post( wpautop( 'Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com and returns HTTP 410 (Gone) for page requests from known search crawlers. Can be removed once the site is launched to production.' ) ),
+				'installation' => wp_kses_post( wpautop( "1. Upload the plugin folder to /wp-content/plugins/\n2. Activate the plugin in WordPress\n3. No configuration needed" ) ),
+				'changelog'    => wp_kses_post( wpautop( "= 1.0.0 =\n* Initial release" ) ),
+			);
+		}
+		$info->sections = $sections; // array of 'description','installation','faq','changelog', etc.
+
+		return $info;
+	}
+
+	/**
+	 * Load and lightly parse readme.txt into modal sections.
+	 *
+	 * @return array<string,string> Sections keyed by description/install/faq/changelog.
+	 */
+	private function load_readme_sections() {
+		$readme_path = plugin_dir_path( __FILE__ ) . 'readme.txt';
+		if ( ! file_exists( $readme_path ) ) {
+			return array();
+		}
+		$raw = @file_get_contents( $readme_path );
+		if ( false === $raw || '' === $raw ) {
+			return array();
+		}
+
+		$map = array(
+			'description'  => 'Description',
+			'installation' => 'Installation',
+			'faq'          => 'Frequently Asked Questions',
+			'changelog'    => 'Changelog',
+			'other_notes'  => 'Upgrade Notice',
+		);
+
+		$sections = array();
+		foreach ( $map as $key => $heading ) {
+			$pattern = '/==\s*' . preg_quote( $heading, '/' ) . '\s*==\s*(.+?)(?:\n==\s*[^=]+\s*==|\z)/si';
+			if ( preg_match( $pattern, $raw, $m ) ) {
+				$sections[ $key ] = wp_kses_post( wpautop( trim( $m[1] ) ) );
+			}
+		}
+
+		return $sections;
 	}
 
 	/**
