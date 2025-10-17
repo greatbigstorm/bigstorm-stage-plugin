@@ -9,7 +9,7 @@
  *
  * @wordpress-plugin
  * Plugin Name:       Big Storm Staging
- * Plugin URI:        https://www.greatbigstorm.com
+ * Plugin URI:        https://github.com/greatbigstorm/bigstorm-stage-plugin
  * Description:       Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com and returns HTTP 410 (Gone) for page requests from known search crawlers. Can be removed once the site is launched to production.
  * Version:           1.0.0
  * Requires at least: 5.2
@@ -52,6 +52,20 @@ class Big_Storm_Staging {
 	private $option_suffix = 'bigstorm_stage_domain_suffix';
 
 	/**
+	 * GitHub repo details.
+	 *
+	 * @var string
+	 */
+	private $github_repo = 'greatbigstorm/bigstorm-stage-plugin';
+
+	/**
+	 * Cache key for update metadata.
+	 *
+	 * @var string
+	 */
+	private $cache_key_update = 'bigstorm_stage_update_meta';
+
+	/**
 	 * Initialize the plugin
 	 *
 	 * @return void
@@ -67,6 +81,12 @@ class Big_Storm_Staging {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		// Provide data for the modal (like WordPress.org) using the plugins_api filter.
 		add_filter( 'plugins_api', array( $this, 'plugins_api_info' ), 10, 3 );
+
+		// GitHub-based update checks.
+		add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'check_for_update' ) );
+		add_filter( 'site_transient_update_plugins', array( $this, 'check_for_update' ) ); // fallback on some installs
+		add_filter( 'upgrader_process_complete', array( $this, 'clear_update_cache' ), 10, 2 );
+		add_filter( 'upgrader_source_selection', array( $this, 'maybe_rename_github_source' ), 10, 3 );
 
 		// Admin notice suggesting removal when not on staging.
 		add_action( 'admin_notices', array( $this, 'maybe_show_remove_notice' ) );
@@ -379,16 +399,19 @@ class Big_Storm_Staging {
 			return $result;
 		}
 
+		$remote          = $this->get_remote_release();
+		$version         = $remote && ! empty( $remote['version'] ) ? $remote['version'] : '1.0.0';
+
 		$info            = new stdClass();
 		$info->name      = 'Big Storm Staging';
 		$info->slug      = $this->slug;
-		$info->version   = '1.0.0';
+		$info->version   = $version;
 		$info->author    = '<a href="https://www.greatbigstorm.com">Big Storm</a>';
-		$info->homepage  = 'https://www.greatbigstorm.com';
+		$info->homepage  = 'https://github.com/' . $this->github_repo;
 		$info->requires  = '5.2';
 		$info->tested    = '6.4';
 		$info->requires_php = '7.2';
-		$info->last_updated  = date_i18n( 'Y-m-d' );
+		$info->last_updated  = $remote && ! empty( $remote['published_at'] ) ? gmdate( 'Y-m-d', strtotime( $remote['published_at'] ) ) : date_i18n( 'Y-m-d' );
 
 		$sections = $this->load_readme_sections();
 		if ( empty( $sections ) ) {
@@ -400,7 +423,193 @@ class Big_Storm_Staging {
 		}
 		$info->sections = $sections; // array of 'description','installation','faq','changelog', etc.
 
+		// Optional: download link (zipball) for modal "Install Update Now" button if applicable.
+		if ( $remote && ! empty( $remote['download_url'] ) ) {
+			$info->download_link = $remote['download_url'];
+		}
+
 		return $info;
+	}
+
+	/**
+	 * Check GitHub for a newer release or tag and inject into the update transient.
+	 *
+	 * @param stdClass $transient Update transient object.
+	 * @return stdClass
+	 */
+	public function check_for_update( $transient ) {
+		if ( empty( $transient ) || ! isset( $transient->checked ) ) {
+			return $transient;
+		}
+
+		$remote = $this->get_remote_release();
+		if ( ! $remote || empty( $remote['version'] ) || empty( $remote['download_url'] ) ) {
+			return $transient;
+		}
+
+		$current_version = $this->get_current_version();
+		if ( ! $current_version || ! $this->is_newer_version( $remote['version'], $current_version ) ) {
+			return $transient;
+		}
+
+		$plugin_file = plugin_basename( __FILE__ );
+		$update              = new stdClass();
+		$update->slug        = $this->slug;
+		$update->plugin      = $plugin_file;
+		$update->new_version = $remote['version'];
+		$update->url         = 'https://github.com/' . $this->github_repo;
+		$update->package     = $remote['download_url'];
+
+		$transient->response[ $plugin_file ] = $update;
+		return $transient;
+	}
+
+	/**
+	 * Clear cached update data after upgrades.
+	 */
+	public function clear_update_cache( $upgrader, $options ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+		delete_site_transient( $this->cache_key_update );
+	}
+
+	/**
+	 * Get current plugin version from header.
+	 *
+	 * @return string|null
+	 */
+	private function get_current_version() {
+		if ( ! function_exists( 'get_plugin_data' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$data = get_plugin_data( __FILE__, false, false );
+		return isset( $data['Version'] ) ? $data['Version'] : null;
+	}
+
+	/**
+	 * Compare semantic-ish versions (supports prefixed 'v').
+	 */
+	private function is_newer_version( $remote, $local ) {
+		$remote = ltrim( (string) $remote, 'vV' );
+		$local  = ltrim( (string) $local, 'vV' );
+		return version_compare( $remote, $local, '>' );
+	}
+
+	/**
+	 * Fetch and cache latest GitHub release/tag.
+	 *
+	 * Strategy:
+	 * 1) Try releases/latest
+	 * 2) Fallback to tags (first sortable tag)
+	 *
+	 * @return array|null { version, download_url, published_at }
+	 */
+	private function get_remote_release() {
+		$cached = get_site_transient( $this->cache_key_update );
+		if ( is_array( $cached ) && isset( $cached['version'] ) ) {
+			return $cached;
+		}
+
+		$remote = null;
+
+		// Try latest release endpoint.
+		$release = $this->github_api_get( 'https://api.github.com/repos/' . $this->github_repo . '/releases/latest' );
+		if ( $release && isset( $release['tag_name'] ) ) {
+			$download = isset( $release['zipball_url'] ) ? $release['zipball_url'] : null;
+			if ( isset( $release['assets'] ) && is_array( $release['assets'] ) ) {
+				foreach ( $release['assets'] as $asset ) {
+					if ( isset( $asset['browser_download_url'] ) && is_string( $asset['browser_download_url'] ) && preg_match( '/\.zip$/i', $asset['browser_download_url'] ) ) {
+						$download = $asset['browser_download_url'];
+						break;
+					}
+				}
+			}
+			$remote = array(
+				'version'      => $release['tag_name'],
+				'download_url' => $download,
+				'published_at' => isset( $release['published_at'] ) ? $release['published_at'] : null,
+			);
+		}
+
+		// Fallback to tags.
+		if ( ! $remote ) {
+			$tags = $this->github_api_get( 'https://api.github.com/repos/' . $this->github_repo . '/tags' );
+			if ( is_array( $tags ) && ! empty( $tags ) && isset( $tags[0]['name'] ) ) {
+				$remote = array(
+					'version'      => $tags[0]['name'],
+					'download_url' => isset( $tags[0]['zipball_url'] ) ? $tags[0]['zipball_url'] : null,
+					'published_at' => null,
+				);
+			}
+		}
+
+		if ( $remote && ! empty( $remote['version'] ) ) {
+			set_site_transient( $this->cache_key_update, $remote, 6 * HOUR_IN_SECONDS );
+		}
+
+		return $remote;
+	}
+
+	/**
+	 * Minimal GitHub API GET helper with UA header and timeout.
+	 *
+	 * @param string $url
+	 * @return array|null
+	 */
+	private function github_api_get( $url ) {
+		$args = array(
+			'timeout' => 10,
+			'headers' => array(
+				'Accept'     => 'application/vnd.github+json',
+				'User-Agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
+			),
+		);
+		$response = wp_remote_get( $url, $args );
+		if ( is_wp_error( $response ) ) {
+			return null;
+		}
+		$code = wp_remote_retrieve_response_code( $response );
+		$body = wp_remote_retrieve_body( $response );
+		if ( 200 !== (int) $code || empty( $body ) ) {
+			return null;
+		}
+		$data = json_decode( $body, true );
+		return is_array( $data ) ? $data : null;
+	}
+
+	/**
+	 * Ensure GitHub unzipped folder name matches the existing plugin folder so update replaces correctly.
+	 *
+	 * @param string       $source        File source location.
+	 * @param string       $remote_source Remote file source location.
+	 * @param WP_Upgrader  $upgrader      Upgrader instance.
+	 * @return string
+	 */
+	public function maybe_rename_github_source( $source, $remote_source, $upgrader ) {
+		// Only run for plugin updates of this plugin.
+		if ( empty( $upgrader->skin ) || empty( $upgrader->skin->plugin ) ) {
+			return $source;
+		}
+		$target_plugin = plugin_basename( __FILE__ );
+		if ( $upgrader->skin->plugin !== $target_plugin ) {
+			return $source;
+		}
+
+		$expected = trailingslashit( dirname( plugin_basename( __FILE__ ) ) );
+		$expected_dir = trailingslashit( WP_PLUGIN_DIR ) . $expected;
+
+		$source_basename = basename( untrailingslashit( $source ) );
+		$remote_basename = basename( untrailingslashit( $remote_source ) );
+
+		// If already matches expected, do nothing.
+		if ( $expected === trailingslashit( $source_basename ) ) {
+			return $source;
+		}
+
+		$destination = trailingslashit( dirname( $source ) ) . basename( $expected );
+		// Attempt to rename unpacked folder.
+		if ( @rename( $source, $destination ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			return $destination;
+		}
+		return $source;
 	}
 
 	/**
