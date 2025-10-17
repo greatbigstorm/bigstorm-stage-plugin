@@ -231,6 +231,15 @@ class Big_Storm_Staging {
 		if ( plugin_basename( __FILE__ ) !== $file ) {
 			return $links;
 		}
+
+		// Avoid duplication: if an update is available, core already shows a View details link.
+		$plugin_file   = plugin_basename( __FILE__ );
+		$updates       = get_site_transient( 'update_plugins' );
+		$has_core_link = ( is_object( $updates ) && isset( $updates->response ) && is_array( $updates->response ) && isset( $updates->response[ $plugin_file ] ) );
+		if ( $has_core_link ) {
+			return $links;
+		}
+
 		$modal_url   = self_admin_url( 'plugin-install.php?tab=plugin-information&plugin=' . urlencode( $this->slug ) . '&TB_iframe=true&width=600&height=600' );
 		$details_link = '<a href="' . esc_url( $modal_url ) . '" class="thickbox open-plugin-details-modal">' . esc_html__( 'View details', 'bigstorm-stage' ) . '</a>';
 		$links[] = $details_link;
