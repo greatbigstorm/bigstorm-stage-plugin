@@ -38,6 +38,26 @@ class Big_Storm_Staging {
 	 */
 	public function init() {
 		add_filter( 'robots_txt', array( $this, 'modify_robots_txt' ), 10, 2 );
+		// Before templates render, potentially return 410 for crawler requests on staging.
+		add_action( 'template_redirect', array( $this, 'maybe_send_410_for_crawlers' ), 0 );
+	}
+
+	/**
+	 * Get the current request host, normalized to lowercase and without port.
+	 *
+	 * @return string
+	 */
+	private function get_current_host() {
+		$host = '';
+		if ( ! empty( $_SERVER['HTTP_HOST'] ) ) {
+			$host = (string) $_SERVER['HTTP_HOST'];
+		} elseif ( ! empty( $_SERVER['SERVER_NAME'] ) ) {
+			$host = (string) $_SERVER['SERVER_NAME'];
+		}
+
+		// Strip port if present and normalize case.
+		$host = strtolower( preg_replace( '/:\\d+$/', '', $host ) );
+		return $host;
 	}
 
 	/**
@@ -46,8 +66,12 @@ class Big_Storm_Staging {
 	 * @return bool True if current domain ends with .greatbigstorm.com
 	 */
 	public function is_staging_domain() {
-		$current_domain = $_SERVER['HTTP_HOST'];
-		return ( strpos( $current_domain, '.greatbigstorm.com' ) !== false );
+		$host = $this->get_current_host();
+		if ( '' === $host ) {
+			return false;
+		}
+		// Ensure the host truly ends with .greatbigstorm.com
+		return (bool) preg_match( '/\.greatbigstorm\.com$/i', $host );
 	}
 
 	/**
@@ -68,6 +92,103 @@ class Big_Storm_Staging {
 		}
 		
 		return $output;
+	}
+
+	/**
+	 * Determine if the current request appears to come from a search crawler.
+	 *
+	 * Uses a filterable list of known crawler user agent substrings and a
+	 * conservative fallback regex for common crawler terms.
+	 *
+	 * @return bool
+	 */
+	private function is_search_crawler() {
+		$user_agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? strtolower( (string) $_SERVER['HTTP_USER_AGENT'] ) : '';
+		if ( '' === $user_agent ) {
+			return false;
+		}
+
+		$crawlers = array(
+			'googlebot',
+			'bingbot',
+			'slurp',        // Yahoo
+			'duckduckbot',
+			'baiduspider',
+			'yandexbot',
+			'ahrefsbot',
+			'semrushbot',
+			'applebot',
+			'petalbot',
+			'sogou',
+			'seznambot',
+			'dotbot',
+			'mj12bot',
+			'yeti',         // Naver
+			'gigabot',
+			'rogerbot',
+		);
+
+		/**
+		 * Filter the list of known crawler identifiers.
+		 *
+		 * @since 1.1.0
+		 *
+		 * @param string[] $crawlers   Array of substrings to match against the User-Agent.
+		 * @param string   $user_agent The full (lowercased) User-Agent string.
+		 */
+		$crawlers = apply_filters( 'bigstorm_stage_crawlers', $crawlers, $user_agent );
+
+		foreach ( (array) $crawlers as $needle ) {
+			$needle = strtolower( (string) $needle );
+			if ( '' !== $needle && false !== strpos( $user_agent, $needle ) ) {
+				return true;
+			}
+		}
+
+		// Conservative fallback regex for common crawler terms.
+		return (bool) preg_match( '/\b(bot|crawl|crawler|spider|slurp|fetch|mediapartners)\b/i', $user_agent );
+	}
+
+	/**
+	 * If on a staging domain and the requester is a known crawler, return HTTP 410.
+	 *
+	 * Skips admin, AJAX, and robots.txt so crawlers can still read the Disallow rules.
+	 * Applies only to GET and HEAD requests on the front-end.
+	 *
+	 * @return void
+	 */
+	public function maybe_send_410_for_crawlers() {
+		// Only act on staging.
+		if ( ! $this->is_staging_domain() ) {
+			return;
+		}
+
+		// Skip admin and AJAX contexts.
+		if ( is_admin() || ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) ) {
+			return;
+		}
+
+		// Allow robots.txt to be served so crawlers can see Disallow rules.
+		if ( function_exists( 'is_robots' ) && is_robots() ) {
+			return;
+		}
+
+		// Only for GET/HEAD page-like requests.
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET';
+		if ( 'GET' !== $method && 'HEAD' !== $method ) {
+			return;
+		}
+
+		if ( ! $this->is_search_crawler() ) {
+			return;
+		}
+
+		// Send 410 Gone response and stop execution.
+		nocache_headers();
+		status_header( 410 );
+		header( 'Content-Type: text/html; charset=' . get_bloginfo( 'charset' ) );
+		echo '<!doctype html><html><head><meta charset="' . esc_attr( get_bloginfo( 'charset' ) ) . '"><title>410 Gone</title></head><body><h1>410 Gone</h1><p>This staging URL is not available to search crawlers.</p></body></html>';
+		exit;
 	}
 }
 
