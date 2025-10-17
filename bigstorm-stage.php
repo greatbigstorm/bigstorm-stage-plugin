@@ -423,6 +423,23 @@ class Big_Storm_Staging {
 		$info->last_updated  = $remote && ! empty( $remote['published_at'] ) ? gmdate( 'Y-m-d', strtotime( $remote['published_at'] ) ) : date_i18n( 'Y-m-d' );
 
 		$sections = $this->load_readme_sections();
+
+		// If a requested version exists (from the link) prefer that; otherwise use remote version.
+		$requested_version = ( isset( $args->version ) && is_string( $args->version ) ) ? trim( $args->version ) : '';
+		$target_tag        = $requested_version ?: ( $remote['version'] ?? '' );
+		if ( $target_tag ) {
+			// Prefer using the tag's README content (readme.txt or README.md) for modal sections.
+			$tag_sections = $this->get_tag_readme_sections( $target_tag );
+			if ( ! empty( $tag_sections ) ) {
+				$sections = $tag_sections;
+			} else {
+				// Fallback: use release notes as changelog if README isn't available.
+				$notes_html = $this->get_release_notes_html( $target_tag );
+				if ( $notes_html ) {
+					$sections['changelog'] = $notes_html;
+				}
+			}
+		}
 		if ( empty( $sections ) ) {
 			$sections = array(
 				'description'  => wp_kses_post( wpautop( 'Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com and returns HTTP 410 (Gone) for page requests from known search crawlers. Can be removed once the site is launched to production.' ) ),
@@ -438,6 +455,138 @@ class Big_Storm_Staging {
 		}
 
 		return $info;
+	}
+
+	/**
+	 * Retrieve release notes from GitHub for a specific tag and convert to safe HTML.
+	 *
+	 * @param string $tag The GitHub release tag name (e.g., v1.0.1).
+	 * @return string|null HTML for changelog or null if not available.
+	 */
+	private function get_release_notes_html( $tag ) {
+		$tag = trim( (string) $tag );
+		if ( '' === $tag ) {
+			return null;
+		}
+		$endpoint = 'https://api.github.com/repos/' . $this->github_repo . '/releases/tags/' . rawurlencode( $tag );
+		$data = $this->github_api_get( $endpoint );
+		if ( ! $data ) {
+			// Try toggling the "v" prefix if the tag wasn't found.
+			if ( 0 === strpos( $tag, 'v' ) || 0 === strpos( $tag, 'V' ) ) {
+				$alt = ltrim( $tag, 'vV' );
+			} else {
+				$alt = 'v' . $tag;
+			}
+			$data = $this->github_api_get( 'https://api.github.com/repos/' . $this->github_repo . '/releases/tags/' . rawurlencode( $alt ) );
+		}
+		if ( ! $data || empty( $data['body'] ) ) {
+			return null;
+		}
+		$body = (string) $data['body'];
+		// Render the markdown body as plain text paragraphs for safety (no markdown parser bundled).
+		$html = wp_kses_post( wpautop( esc_html( $body ) ) );
+		// Add a link to the release page for full context.
+		if ( ! empty( $data['html_url'] ) ) {
+			$html .= '<p><a href="' . esc_url( $data['html_url'] ) . '" target="_blank" rel="noopener noreferrer">' . esc_html__( 'View on GitHub', 'bigstorm-stage' ) . '</a></p>';
+		}
+		return $html;
+	}
+
+	/**
+	 * Try to load README sections from GitHub for a given tag.
+	 *
+	 * Prefers a WordPress-style readme.txt at the tag. Falls back to README.md.
+	 * Uses a site transient cache to reduce API calls.
+	 *
+	 * @param string $tag Tag name, e.g., v1.0.1 or 1.0.1.
+	 * @return array<string,string> Sections array or empty array on failure.
+	 */
+	private function get_tag_readme_sections( $tag ) {
+		$tag = trim( (string) $tag );
+		if ( '' === $tag ) {
+			return array();
+		}
+
+		$cache_key = 'bigstorm_stage_tag_readme_' . md5( strtolower( $tag ) );
+		$cached    = get_site_transient( $cache_key );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		// Try readme.txt first with tag and toggled v-prefix.
+		$raw_txt = $this->fetch_github_file_at_ref( 'readme.txt', $tag );
+		if ( null === $raw_txt ) {
+			$alt = ( 0 === stripos( $tag, 'v' ) ) ? ltrim( $tag, 'vV' ) : 'v' . $tag;
+			$raw_txt = $this->fetch_github_file_at_ref( 'readme.txt', $alt );
+		}
+
+		if ( is_string( $raw_txt ) && '' !== $raw_txt ) {
+			$sections = $this->parse_wp_readme_sections( $raw_txt );
+			if ( ! empty( $sections ) ) {
+				set_site_transient( $cache_key, $sections, 6 * HOUR_IN_SECONDS );
+				return $sections;
+			}
+		}
+
+		// Fallback: README.md (rendered as simple paragraphs, not full markdown).
+		$raw_md = $this->fetch_github_file_at_ref( 'README.md', $tag );
+		if ( null === $raw_md ) {
+			$alt = ( 0 === stripos( $tag, 'v' ) ) ? ltrim( $tag, 'vV' ) : 'v' . $tag;
+			$raw_md = $this->fetch_github_file_at_ref( 'README.md', $alt );
+		}
+
+		if ( is_string( $raw_md ) && '' !== $raw_md ) {
+			$desc = wp_kses_post( wpautop( esc_html( $raw_md ) ) );
+			$sections = array( 'description' => $desc );
+			set_site_transient( $cache_key, $sections, 6 * HOUR_IN_SECONDS );
+			return $sections;
+		}
+
+		return array();
+	}
+
+	/**
+	 * Fetch a file's raw contents from GitHub at a specific ref/tag.
+	 *
+	 * @param string $path Path within the repo (e.g., readme.txt, README.md).
+	 * @param string $ref  Git ref (tag/branch/commit SHA).
+	 * @return string|null Raw file content or null on failure.
+	 */
+	private function fetch_github_file_at_ref( $path, $ref ) {
+		$endpoint = 'https://api.github.com/repos/' . $this->github_repo . '/contents/' . str_replace( '%2F', '/', rawurlencode( $path ) ) . '?ref=' . rawurlencode( $ref );
+		$data     = $this->github_api_get( $endpoint );
+		if ( ! is_array( $data ) || empty( $data['content'] ) || empty( $data['encoding'] ) ) {
+			return null;
+		}
+		if ( 'base64' === strtolower( (string) $data['encoding'] ) ) {
+			$raw = base64_decode( (string) $data['content'] );
+			return is_string( $raw ) ? $raw : null;
+		}
+		return null;
+	}
+
+	/**
+	 * Parse a WordPress-style readme.txt into sections for the modal.
+	 *
+	 * @param string $raw The raw readme.txt contents.
+	 * @return array<string,string>
+	 */
+	private function parse_wp_readme_sections( $raw ) {
+		$map = array(
+			'description'  => 'Description',
+			'installation' => 'Installation',
+			'faq'          => 'Frequently Asked Questions',
+			'changelog'    => 'Changelog',
+			'other_notes'  => 'Upgrade Notice',
+		);
+		$sections = array();
+		foreach ( $map as $key => $heading ) {
+			$pattern = '/==\s*' . preg_quote( $heading, '/' ) . '\s*==\s*(.+?)(?:\n==\s*[^=]+\s*==|\z)/si';
+			if ( preg_match( $pattern, $raw, $m ) ) {
+				$sections[ $key ] = wp_kses_post( wpautop( trim( $m[1] ) ) );
+			}
+		}
+		return $sections;
 	}
 
 	/**
