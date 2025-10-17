@@ -38,6 +38,13 @@ class Big_Storm_Staging {
 	private $slug;
 
 	/**
+	 * User meta key for dismissing the remove-plugin admin notice.
+	 *
+	 * @var string
+	 */
+	private $dismiss_meta_key = 'bigstorm_stage_dismiss_remove_notice';
+
+	/**
 	 * Initialize the plugin
 	 *
 	 * @return void
@@ -53,6 +60,12 @@ class Big_Storm_Staging {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		// Provide data for the modal (like WordPress.org) using the plugins_api filter.
 		add_filter( 'plugins_api', array( $this, 'plugins_api_info' ), 10, 3 );
+
+		// Admin notice suggesting removal when not on staging.
+		add_action( 'admin_notices', array( $this, 'maybe_show_remove_notice' ) );
+		add_action( 'network_admin_notices', array( $this, 'maybe_show_remove_notice' ) );
+		add_action( 'admin_init', array( $this, 'handle_dismiss_remove_notice' ) );
+		add_action( 'wp_ajax_bigstorm_stage_dismiss', array( $this, 'ajax_dismiss_remove_notice' ) );
 	}
 
 	/**
@@ -108,12 +121,6 @@ class Big_Storm_Staging {
 	}
 
 	/**
-	 * Add custom action links to the plugin row on the Plugins page.
-	 *
-	 * @param string[] $links Existing action links.
-	 * @return string[] Modified action links.
-	 */
-	/**
 	 * Add a "View details" link to the plugin meta row under the description.
 	 *
 	 * @param string[] $links Meta links.
@@ -140,6 +147,37 @@ class Big_Storm_Staging {
 		if ( 'plugins.php' === $hook ) {
 			add_thickbox();
 		}
+
+		// If our remove notice would show, add a small inline script to persist dismissals.
+		if ( $this->should_show_remove_notice() ) {
+			add_action( 'admin_print_footer_scripts', array( $this, 'print_dismiss_script' ) );
+		}
+	}
+
+	/**
+	 * Print a tiny inline script to persist dismissal on the X click for our notice.
+	 *
+	 * @return void
+	 */
+	public function print_dismiss_script() {
+		?>
+		<script>
+		(function(){
+			document.addEventListener('click', function(e){
+				var closeBtn = e.target.closest('#bigstorm-stage-remove-notice .notice-dismiss');
+				if (!closeBtn) return;
+				var wrap = document.getElementById('bigstorm-stage-remove-notice');
+				if (!wrap) return;
+				var nonce = wrap.getAttribute('data-nonce');
+				if (!nonce) return;
+				var data = new window.FormData();
+				data.append('action', 'bigstorm_stage_dismiss');
+				data.append('security', nonce);
+				fetch(ajaxurl, {method: 'POST', credentials: 'same-origin', body: data});
+			}, true);
+		})();
+		</script>
+		<?php
 	}
 
 	/**
@@ -214,6 +252,89 @@ class Big_Storm_Staging {
 		}
 
 		return $sections;
+	}
+
+	/**
+	 * Determine if the remove-plugin notice should be shown on this request.
+	 *
+	 * @return bool
+	 */
+	private function should_show_remove_notice() {
+		if ( ! is_admin() || ! is_user_logged_in() ) {
+			return false;
+		}
+		if ( ! current_user_can( 'activate_plugins' ) ) {
+			return false;
+		}
+		if ( $this->is_staging_domain() ) {
+			return false;
+		}
+		if ( get_user_meta( get_current_user_id(), $this->dismiss_meta_key, true ) ) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Handle dismissal of the remove-plugin notice via nonce-protected link.
+	 *
+	 * @return void
+	 */
+	public function handle_dismiss_remove_notice() {
+		if ( ! is_user_logged_in() ) {
+			return;
+		}
+		if ( empty( $_GET['bigstorm_stage_dismiss'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+		if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( $_GET['_wpnonce'], 'bigstorm_stage_dismiss' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+		update_user_meta( get_current_user_id(), $this->dismiss_meta_key, 1 );
+		// Redirect to remove the query args.
+		wp_safe_redirect( remove_query_arg( array( 'bigstorm_stage_dismiss', '_wpnonce' ) ) );
+		exit;
+	}
+
+	/**
+	 * AJAX: Persist dismissal when clicking the core notice dismiss (X) button.
+	 *
+	 * @return void
+	 */
+	public function ajax_dismiss_remove_notice() {
+		if ( ! is_user_logged_in() || ! current_user_can( 'activate_plugins' ) ) {
+			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+		}
+		check_ajax_referer( 'bigstorm_stage_dismiss', 'security' );
+		update_user_meta( get_current_user_id(), $this->dismiss_meta_key, 1 );
+		wp_send_json_success();
+	}
+
+	/**
+	 * Show a dismissible admin notice suggesting plugin removal when not on staging.
+	 *
+	 * @return void
+	 */
+	public function maybe_show_remove_notice() {
+		if ( ! $this->should_show_remove_notice() ) {
+			return;
+		}
+
+		$basename       = plugin_basename( __FILE__ );
+		$deactivate_url = wp_nonce_url( self_admin_url( 'plugins.php?action=deactivate&plugin=' . urlencode( $basename ) ), 'deactivate-plugin_' . $basename );
+		$plugins_url    = self_admin_url( 'plugins.php?s=' . rawurlencode( 'Big Storm Staging' ) );
+		$nonce         = wp_create_nonce( 'bigstorm_stage_dismiss' );
+
+		$notice  = '<div id="bigstorm-stage-remove-notice" class="notice notice-warning is-dismissible" data-nonce="' . esc_attr( $nonce ) . '">';
+		$notice .= '<p><strong>' . esc_html__( 'Big Storm Staging', 'bigstorm-stage' ) . ':</strong> ' . esc_html__( 'This site does not appear to be on a .greatbigstorm.com staging domain. You can safely remove this plugin on production.', 'bigstorm-stage' ) . '</p>';
+		$notice .= '<p>';
+		$notice .= '<a class="button button-secondary" href="' . esc_url( $deactivate_url ) . '">' . esc_html__( 'Deactivate now', 'bigstorm-stage' ) . '</a> ';
+		$notice .= '<a class="button-link" href="' . esc_url( $plugins_url ) . '">' . esc_html__( 'Open Plugins page', 'bigstorm-stage' ) . '</a>';
+		$notice .= '</p>';
+		$notice .= '</div>';
+
+		echo wp_kses_post( $notice );
 	}
 
 	/**
