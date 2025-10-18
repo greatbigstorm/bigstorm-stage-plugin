@@ -87,6 +87,7 @@ class Big_Storm_Staging {
 		add_filter( 'site_transient_update_plugins', array( $this, 'check_for_update' ) ); // fallback on some installs
 		add_filter( 'upgrader_process_complete', array( $this, 'clear_update_cache' ), 10, 2 );
 		add_filter( 'upgrader_source_selection', array( $this, 'maybe_rename_github_source' ), 10, 3 );
+		add_filter( 'upgrader_post_install', array( $this, 'finalize_github_install' ), 10, 3 );
 
 		// Admin notice suggesting removal when not on staging.
 		add_action( 'admin_notices', array( $this, 'maybe_show_remove_notice' ) );
@@ -742,32 +743,60 @@ class Big_Storm_Staging {
 	 * @return string
 	 */
 	public function maybe_rename_github_source( $source, $remote_source, $upgrader ) {
-		// Only run for plugin updates of this plugin.
-		if ( empty( $upgrader->skin ) || empty( $upgrader->skin->plugin ) ) {
-			return $source;
-		}
-		$target_plugin = plugin_basename( __FILE__ );
-		if ( $upgrader->skin->plugin !== $target_plugin ) {
-			return $source;
-		}
-
-		$expected = trailingslashit( dirname( plugin_basename( __FILE__ ) ) );
-		$expected_dir = trailingslashit( WP_PLUGIN_DIR ) . $expected;
-
-		$source_basename = basename( untrailingslashit( $source ) );
-		$remote_basename = basename( untrailingslashit( $remote_source ) );
-
-		// If already matches expected, do nothing.
-		if ( $expected === trailingslashit( $source_basename ) ) {
-			return $source;
-		}
-
-		$destination = trailingslashit( dirname( $source ) ) . basename( $expected );
-		// Attempt to rename unpacked folder.
-		if ( @rename( $source, $destination ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			return $destination;
-		}
+		// Let core handle copying; we will correct the final folder name in upgrader_post_install.
 		return $source;
+	}
+
+
+	/**
+	 * After successful plugin install, ensure the directory name matches the expected slug.
+	 *
+	 * @param bool  $response   Result of installation (true on success).
+	 * @param array $hook_extra Extra arguments passed to upgrader.
+	 * @param array $result     Install result (destination, destination_name, etc.).
+	 * @return bool
+	 */
+	public function finalize_github_install( $response, $hook_extra, $result ) {
+		if ( true !== $response ) {
+			return $response;
+		}
+		
+		if ( empty( $hook_extra['plugin'] ) || plugin_basename( __FILE__ ) !== $hook_extra['plugin'] ) {
+			return $response;
+		}
+
+		$expected_dirname = dirname( plugin_basename( __FILE__ ) ); // 'bigstorm-stage'
+		$dest             = isset( $result['destination'] ) ? $result['destination'] : '';
+		$dest_name        = isset( $result['destination_name'] ) ? $result['destination_name'] : '';
+		if ( empty( $dest ) || ! is_dir( $dest ) ) {
+			return $response;
+		}
+
+		// If WordPress installed to a different folder name, rename it now.
+		if ( $dest_name && $dest_name !== $expected_dirname ) {
+			$target = trailingslashit( WP_PLUGIN_DIR ) . $expected_dirname;
+			if ( is_dir( $target ) ) {
+				if ( function_exists( 'wp_delete_folder' ) ) {
+					wp_delete_folder( $target );
+				} else {
+					$this->rrmdir( $target );
+				}
+			}
+			global $wp_filesystem;
+			if ( ! $wp_filesystem ) {
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+				WP_Filesystem();
+			}
+			$ok = false;
+			if ( $wp_filesystem && is_object( $wp_filesystem ) && method_exists( $wp_filesystem, 'move' ) ) {
+				$ok = (bool) $wp_filesystem->move( $dest, $target, true );
+			}
+			if ( ! $ok ) {
+				$ok = @rename( $dest, $target ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		}
+
+		return $response;
 	}
 
 	/**
