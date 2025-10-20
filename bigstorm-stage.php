@@ -577,7 +577,6 @@ class Big_Storm_Staging {
 			'installation' => 'Installation',
 			'faq'          => 'Frequently Asked Questions',
 			'changelog'    => 'Changelog',
-			'other_notes'  => 'Upgrade Notice',
 		);
 		$sections = array();
 		foreach ( $map as $key => $heading ) {
@@ -803,7 +802,6 @@ class Big_Storm_Staging {
 			'installation' => 'Installation',
 			'faq'          => 'Frequently Asked Questions',
 			'changelog'    => 'Changelog',
-			'other_notes'  => 'Upgrade Notice',
 		);
 
 		$sections = array();

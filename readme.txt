@@ -75,11 +75,3 @@ No, the plugin only modifies robots.txt on domains ending with .greatbigstorm.co
 
 = 1.0.0 =
 * Initial release
-
-== Upgrade Notice ==
-
-= 1.0.1 =
-Adds GitHub-based updates and settings.
-
-= 1.0.0 =
-Initial release
