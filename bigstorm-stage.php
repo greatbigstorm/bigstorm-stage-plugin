@@ -753,6 +753,14 @@ class Big_Storm_Staging {
 
 		$source = trailingslashit( $source );
 
+		// Proactively remove files we don't want shipped via updates.
+		foreach ( array( '.gitignore', 'package.sh' ) as $unwanted ) {
+			$unwanted_path = $source . $unwanted;
+			if ( file_exists( $unwanted_path ) && is_file( $unwanted_path ) ) {
+				@unlink( $unwanted_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		}
+
 		$expected_dirname = dirname( plugin_basename( __FILE__ ) ); // 'bigstorm-stage'
 		$current_basename = basename( untrailingslashit( $source ) );
 		if ( $current_basename === $expected_dirname ) {
