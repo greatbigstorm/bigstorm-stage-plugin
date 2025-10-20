@@ -3,7 +3,7 @@ Contributors: bigstorm
 Tags: robots, staging, seo
 Requires at least: 5.2
 Tested up to: 6.4
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -66,6 +66,9 @@ Yes. Go to Settings → Big Storm Staging and set the “Staging domain match”
 No, the plugin only modifies robots.txt on domains ending with .greatbigstorm.com
 
 == Changelog ==
+
+= 1.0.3 =
+* Exclude `.gitignore` and `package.sh` from GitHub update installs
 
 = 1.0.2 =
 * Normalize folder name during update so WordPress installs directly to `bigstorm-stage`
