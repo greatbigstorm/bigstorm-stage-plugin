@@ -929,6 +929,30 @@ class Big_Storm_Staging {
 			return false;
 		}
 
+		// Allowlist: explicitly permit certain known non-search bots.
+		$allowlist = array(
+			'plesk screenshot bot',
+		);
+
+		/**
+		 * Filter the list of allowed bot identifiers that should never be treated as search crawlers.
+		 *
+		 * If a substring from this list is found in the User-Agent, this function will return false
+		 * (i.e., not a crawler), regardless of other matches.
+		 *
+		 * @since 1.0.3
+		 *
+		 * @param string[] $allowlist  Array of substrings to match against the User-Agent.
+		 * @param string   $user_agent The full (lowercased) User-Agent string.
+		 */
+		$allowlist = apply_filters( 'bigstorm_stage_crawler_allowlist', $allowlist, $user_agent );
+		foreach ( (array) $allowlist as $ok ) {
+			$ok = strtolower( (string) $ok );
+			if ( '' !== $ok && false !== strpos( $user_agent, $ok ) ) {
+				return false;
+			}
+		}
+
 		$crawlers = array(
 			'googlebot',
 			'bingbot',
