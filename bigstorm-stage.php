@@ -931,7 +931,14 @@ class Big_Storm_Staging {
 
 		// Allowlist: explicitly permit certain known non-search bots.
 		$allowlist = array(
+			// Plesk screenshot bot
 			'plesk screenshot bot',
+			// Utilities
+			'MxToolbox',
+			// Monitoring services
+			'StatusCake',
+			'uptimerobot',
+			'pingdom',
 		);
 
 		/**
