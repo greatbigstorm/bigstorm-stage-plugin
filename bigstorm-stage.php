@@ -11,7 +11,7 @@
  * Plugin Name:       Big Storm Staging
  * Plugin URI:        https://github.com/greatbigstorm/bigstorm-stage-plugin
  * Description:       Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com and returns HTTP 410 (Gone) for page requests from known search crawlers. Can be removed once the site is launched to production.
- * Version:           1.0.4
+ * Version:           1.0.5
  * Requires at least: 5.2
  * Requires PHP:      7.2
  * Author:            Big Storm
@@ -409,7 +409,7 @@ class Big_Storm_Staging {
 		}
 
 		$remote          = $this->get_remote_release();
-		$version         = $remote && ! empty( $remote['version'] ) ? $remote['version'] : ( $this->get_current_version() ?: '1.0.4' );
+		$version         = $remote && ! empty( $remote['version'] ) ? $remote['version'] : ( $this->get_current_version() ?: '1.0.5' );
 
 		$info            = new stdClass();
 		$info->name      = 'Big Storm Staging';
