@@ -14,15 +14,15 @@ Automatically adds a "Disallow: /" directive to robots.txt on staging domains en
 
 Big Storm Staging is a simple plugin that prevents search engines from indexing staging sites. When activated on a domain ending with .greatbigstorm.com, it will:
 
-* Override the default robots.txt content and add a "Disallow: /" directive to prevent crawling
 * Return HTTP 410 (Gone) for page requests identified as coming from known search crawlers (e.g., Googlebot)
-* Optionally, you can configure a custom staging domain match (a full domain like "staging.example.com" or a suffix like ".greatbigstorm.com") in Settings → Big Storm Staging (default: .greatbigstorm.com)
+* Optionally add a "Disallow: /" directive to robots.txt to prevent crawling
+* Configure a custom staging domain match (a full domain like "staging.example.com" or a suffix like ".greatbigstorm.com") in Settings → Big Storm Staging (default: .greatbigstorm.com)
 
 Key features:
 
 * Automatically detects staging domains ending with .greatbigstorm.com
-* Adds "Disallow: /" to robots.txt on staging domains
 * Returns HTTP 410 (Gone) to search crawlers requesting pages on staging
+* Optional robots.txt blocking (disabled by default to allow 410 responses)
 * No configuration needed - works out of the box
 * Only affects staging domains, leaving production sites untouched
 * Can be safely removed once the site is launched to production
@@ -31,18 +31,22 @@ Key features:
 
 1. Upload the `bigstorm-stage` directory to the `/wp-content/plugins/` directory
 2. Activate the plugin through the 'Plugins' menu in WordPress
-3. No configuration needed - the plugin will automatically check the domain and modify robots.txt as needed
-4. Optional: Go to Settings → Big Storm Staging to change the staging domain match the plugin will use
+3. No configuration needed - the plugin will automatically send HTTP 410 responses to crawlers on staging domains
+4. Optional: Go to Settings → Big Storm Staging to configure the staging domain match or enable robots.txt blocking
 
 == Frequently Asked Questions ==
 
 = How do I know if the plugin is working? =
 
-Visit your site's robots.txt file (yourdomain.greatbigstorm.com/robots.txt) and verify it contains "Disallow: /". Additionally, when Googlebot or another known crawler requests any page, the server will respond with HTTP 410 (Gone).
+When Googlebot or another known crawler requests any page on your staging domain, the server will respond with HTTP 410 (Gone). Optionally, enable the "Block crawlers with robots.txt" setting in Settings → Big Storm Staging to also add "Disallow: /" to your robots.txt file.
+
+= Should I enable robots.txt blocking? =
+
+If your staging site has never been indexed by search engines, you can enable robots.txt blocking as an additional safeguard. However, if your staging site is already indexed in Google Search Console, keep this setting disabled. This allows Googlebot to receive HTTP 410 responses, which signals Google to remove the pages from its search index. A robots.txt "Disallow" directive prevents crawlers from accessing pages entirely, so they cannot receive the 410 status.
 
 = What does the 410 behavior do, and can I customize crawler detection? =
 
-On staging domains ending in .greatbigstorm.com, page requests from known search crawlers (e.g., Googlebot, Bingbot, DuckDuckBot) get an HTTP 410 (Gone) response. This signals that the content should be removed from search results. The plugin still serves a robots.txt with `Disallow: /` so crawlers can read the rule.
+On staging domains, page requests from known search crawlers (e.g., Googlebot, Bingbot, DuckDuckBot) get an HTTP 410 (Gone) response. This signals that the content should be removed from search results.
 
 You can customize the set of recognized crawlers using the `bigstorm_stage_crawlers` filter:
 

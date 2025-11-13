@@ -90,8 +90,8 @@ class Big_Storm_Staging_Protection {
 	 * @return string Modified robots.txt content.
 	 */
 	public function modify_robots_txt( $output, $public ) {
-		// Only modify if this is a staging domain
-		if ( $this->is_staging_domain() ) {
+		// Only modify if this is a staging domain and robots blocking is enabled.
+		if ( $this->is_staging_domain() && $this->settings->is_robots_blocking_enabled() ) {
 			// Replace with a deny all directive
 			$output = "User-agent: *\nDisallow: /\n";
 			

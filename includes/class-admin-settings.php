@@ -31,6 +31,13 @@ class Big_Storm_Admin_Settings {
 	private $option_suffix;
 
 	/**
+	 * Option name for blocking crawlers with robots.txt
+	 *
+	 * @var string
+	 */
+	private $option_block_robots;
+
+	/**
 	 * Plugin file path
 	 *
 	 * @var string
@@ -44,9 +51,10 @@ class Big_Storm_Admin_Settings {
 	 * @param string $plugin_file Main plugin file path.
 	 */
 	public function __construct( $slug, $plugin_file ) {
-		$this->slug          = $slug;
-		$this->plugin_file   = $plugin_file;
-		$this->option_suffix = 'bigstorm_stage_domain_suffix';
+		$this->slug               = $slug;
+		$this->plugin_file        = $plugin_file;
+		$this->option_suffix      = 'bigstorm_stage_domain_suffix';
+		$this->option_block_robots = 'bigstorm_stage_block_robots';
 	}
 
 	/**
@@ -72,6 +80,15 @@ class Big_Storm_Admin_Settings {
 			$value = '.greatbigstorm.com';
 		}
 		return $value;
+	}
+
+	/**
+	 * Check if robots.txt blocking is enabled.
+	 *
+	 * @return bool
+	 */
+	public function is_robots_blocking_enabled() {
+		return (bool) get_option( $this->option_block_robots, false );
 	}
 
 	/**
@@ -126,6 +143,12 @@ class Big_Storm_Admin_Settings {
 			'default'           => '.greatbigstorm.com',
 		) );
 
+		register_setting( 'bigstorm_stage_settings', $this->option_block_robots, array(
+			'type'              => 'boolean',
+			'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
+			'default'           => false,
+		) );
+
 		add_settings_section(
 			'bigstorm_stage_main',
 			__( 'Staging Domain', 'bigstorm-stage' ),
@@ -142,6 +165,23 @@ class Big_Storm_Admin_Settings {
 			$this->slug,
 			'bigstorm_stage_main'
 		);
+
+		add_settings_section(
+			'bigstorm_stage_protection',
+			__( 'Protection Methods', 'bigstorm-stage' ),
+			function () {
+				echo '<p>' . esc_html__( 'Choose how to prevent search engines from indexing this staging site.', 'bigstorm-stage' ) . '</p>';
+			},
+			$this->slug
+		);
+
+		add_settings_field(
+			'bigstorm_stage_block_robots_field',
+			__( 'Block crawlers with robots.txt', 'bigstorm-stage' ),
+			array( $this, 'render_block_robots_field' ),
+			$this->slug,
+			'bigstorm_stage_protection'
+		);
 	}
 
 	/**
@@ -152,6 +192,16 @@ class Big_Storm_Admin_Settings {
 	 */
 	public function sanitize_suffix( $value ) {
 		return $this->normalize_suffix( $value );
+	}
+
+	/**
+	 * Sanitize callback for checkbox settings.
+	 *
+	 * @param mixed $value Raw input.
+	 * @return bool Sanitized value.
+	 */
+	public function sanitize_checkbox( $value ) {
+		return (bool) $value;
 	}
 
 	/**
@@ -200,6 +250,26 @@ class Big_Storm_Admin_Settings {
 		?>
 		<input type="text" class="regular-text" name="<?php echo esc_attr( $this->option_suffix ); ?>" value="<?php echo esc_attr( $value ); ?>" placeholder=".greatbigstorm.com" />
 		<p class="description"><?php echo esc_html__( 'Enter a full domain (e.g., "staging.example.com") for an exact match, or a suffix starting with a dot (e.g., ".greatbigstorm.com") to match any host that ends with it.', 'bigstorm-stage' ); ?></p>
+		<?php
+	}
+
+	/**
+	 * Render the checkbox field for robots.txt blocking.
+	 *
+	 * @return void
+	 */
+	public function render_block_robots_field() {
+		$value = get_option( $this->option_block_robots, false );
+		?>
+		<label>
+			<input type="checkbox" name="<?php echo esc_attr( $this->option_block_robots ); ?>" value="1" <?php checked( $value, true ); ?> />
+			<?php echo esc_html__( 'Add "Disallow: /" to robots.txt on staging domains', 'bigstorm-stage' ); ?>
+		</label>
+		<p class="description">
+			<?php
+			echo esc_html__( 'Prevents search crawlers from indexing pages via robots.txt. If your staging site is already indexed in Google Search Console, disable this setting to allow Googlebot to receive HTTP 410 (Gone) responses, which signals Google to remove pages from the search index.', 'bigstorm-stage' );
+			?>
+		</p>
 		<?php
 	}
 

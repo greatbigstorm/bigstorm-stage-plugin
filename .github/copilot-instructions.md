@@ -32,13 +32,15 @@ bigstorm-stage/
 
 1. **Admin Settings** (`class-admin-settings.php`) - Base component, no dependencies
    - Manages `bigstorm_stage_domain_suffix` option
+   - Manages `bigstorm_stage_block_robots` option (checkbox, default: false)
    - Provides `get_staging_suffix()` and `normalize_suffix()` methods
+   - Provides `is_robots_blocking_enabled()` method
    - Renders settings page and adds Settings link to plugin row
 
 2. **Staging Protection** (`class-staging-protection.php`) - Depends on Admin Settings
    - Core domain logic: `is_staging_domain()` checks current host against configured suffix
-   - Modifies `robots.txt` via `robots_txt` filter (priority 10)
-   - Sends HTTP 410 via `template_redirect` hook (priority 0 - earliest)
+   - Modifies `robots.txt` via `robots_txt` filter (priority 10) - **only if `is_robots_blocking_enabled()` is true**
+   - Sends HTTP 410 via `template_redirect` hook (priority 0 - earliest) - **always on staging domains**
    - Manages crawler detection with filterable allowlist and crawler list
 
 3. **GitHub Updater** (`class-github-updater.php`) - Independent component
@@ -66,10 +68,17 @@ bigstorm-stage/
 - Supports exact domain match (e.g., `staging.example.com`) or suffix (`.greatbigstorm.com`)
 - Domain normalization in `Big_Storm_Admin_Settings::normalize_suffix()`: strips protocol, port, path, lowercases
 
+**Robots.txt Blocking** (in `Big_Storm_Staging_Protection`):
+- Controlled by `bigstorm_stage_block_robots` option (checkbox in Settings)
+- **Disabled by default** - allows crawlers to receive HTTP 410 responses
+- When enabled: adds "Disallow: /" to robots.txt on staging domains
+- **Important**: Should remain disabled if site is already in Google Search Console (allows 410 removal signal)
+
 **Crawler Detection** (in `Big_Storm_Staging_Protection::is_search_crawler()`):
 - **Allowlist checked first** (`bigstorm_stage_crawler_allowlist` filter) - excludes non-search bots (e.g., Plesk, StatusCake)
 - Then checks against known crawler list (`bigstorm_stage_crawlers` filter)
 - Fallback regex for common crawler terms if no matches
+- **HTTP 410 always sent on staging domains** regardless of robots.txt setting
 
 ## GitHub Update System
 
