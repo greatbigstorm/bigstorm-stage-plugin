@@ -10,8 +10,8 @@
  * @wordpress-plugin
  * Plugin Name:       Big Storm Staging
  * Plugin URI:        https://github.com/greatbigstorm/bigstorm-stage-plugin
- * Description:       Adds a "Disallow: /" directive to robots.txt on staging domains ending with .greatbigstorm.com and returns HTTP 410 (Gone) for page requests from known search crawlers. Can be removed once the site is launched to production.
- * Version:           1.0.5
+ * Description:       Prevents search engine indexing on staging domains by modifying robots.txt and returning HTTP 410 (Gone) to search engine crawlers. Remove from production environments.
+ * Version:           1.1.0
  * Requires at least: 5.2
  * Requires PHP:      7.2
  * Author:            Big Storm
