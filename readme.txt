@@ -15,12 +15,14 @@ Automatically adds a "Disallow: /" directive to robots.txt on staging domains en
 Big Storm Staging is a simple plugin that prevents search engines from indexing staging sites. When activated on a domain ending with .greatbigstorm.com, it will:
 
 * Return HTTP 410 (Gone) for page requests identified as coming from known search crawlers (e.g., Googlebot)
+* Enable "Discourage search engines from indexing this site" in Reading Settings on activation
 * Optionally add a "Disallow: /" directive to robots.txt to prevent crawling
 * Configure a custom staging domain match (a full domain like "staging.example.com" or a suffix like ".greatbigstorm.com") in Settings → Big Storm Staging (default: .greatbigstorm.com)
 
 Key features:
 
 * Automatically detects staging domains ending with .greatbigstorm.com
+* Enables WordPress search engine discouragement on activation
 * Returns HTTP 410 (Gone) to search crawlers requesting pages on staging
 * Optional robots.txt blocking (disabled by default to allow 410 responses)
 * No configuration needed - works out of the box

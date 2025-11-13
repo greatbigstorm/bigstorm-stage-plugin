@@ -26,6 +26,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Activation hook: Enable search engine discouragement on staging domains.
+ *
+ * @return void
+ */
+function bigstorm_stage_activate() {
+	// Load the necessary classes to check if we're on a staging domain.
+	require_once plugin_dir_path( __FILE__ ) . 'includes/class-admin-settings.php';
+	require_once plugin_dir_path( __FILE__ ) . 'includes/class-staging-protection.php';
+	
+	$settings           = new Big_Storm_Admin_Settings( 'bigstorm-stage', __FILE__ );
+	$staging_protection = new Big_Storm_Staging_Protection( $settings );
+	
+	// If this is a staging domain, auto-enable "Discourage search engines".
+	if ( $staging_protection->is_staging_domain() ) {
+		update_option( 'blog_public', 0 );
+	}
+}
+register_activation_hook( __FILE__, 'bigstorm_stage_activate' );
+
 // Load plugin classes.
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-admin-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-staging-protection.php';

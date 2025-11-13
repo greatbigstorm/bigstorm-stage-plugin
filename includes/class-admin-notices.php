@@ -69,6 +69,10 @@ class Big_Storm_Admin_Notices {
 		add_action( 'admin_init', array( $this, 'handle_dismiss_remove_notice' ) );
 		add_action( 'wp_ajax_bigstorm_stage_dismiss', array( $this, 'ajax_dismiss_remove_notice' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'maybe_enqueue_dismiss_script' ) );
+		
+		// Search engine visibility warning on staging domains.
+		add_action( 'admin_notices', array( $this, 'maybe_show_visibility_notice' ) );
+		add_action( 'network_admin_notices', array( $this, 'maybe_show_visibility_notice' ) );
 	}
 
 	/**
@@ -195,6 +199,51 @@ class Big_Storm_Admin_Notices {
 		$notice .= '<a class="button button-secondary" href="' . esc_url( $deactivate_url ) . '">' . esc_html__( 'Deactivate now', 'bigstorm-stage' ) . '</a> | ';
 		$notice .= '<a class="button-link" href="' . esc_url( $plugins_url ) . '">' . esc_html__( 'Open Plugins page', 'bigstorm-stage' ) . '</a> | ';
 		$notice .= '<a class="button-link" href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Open Settings', 'bigstorm-stage' ) . '</a>';
+		$notice .= '</p>';
+		$notice .= '</div>';
+
+		echo wp_kses_post( $notice );
+	}
+
+	/**
+	 * Check if search engine visibility setting is disabled (discouraged).
+	 *
+	 * @return bool True if search engines are discouraged.
+	 */
+	private function is_search_discouraged() {
+		return (bool) get_option( 'blog_public', 1 ) == 0;
+	}
+
+	/**
+	 * Show non-dismissible warning if search engines aren't discouraged on staging.
+	 *
+	 * @return void
+	 */
+	public function maybe_show_visibility_notice() {
+		// Only show on staging domains.
+		if ( ! $this->staging_protection->is_staging_domain() ) {
+			return;
+		}
+
+		// Only show if search engines are not discouraged.
+		if ( $this->is_search_discouraged() ) {
+			return;
+		}
+
+		// Only show to users who can manage options.
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		$reading_url = self_admin_url( 'options-reading.php' );
+
+		$notice  = '<div class="notice notice-error">';
+		$notice .= '<p><strong>' . esc_html__( 'Big Storm Staging - Search Engine Visibility Warning', 'bigstorm-stage' ) . '</strong></p>';
+		$notice .= '<p>';
+		$notice .= esc_html__( 'This is a staging site, but the "Discourage search engines from indexing this site" setting is not enabled.', 'bigstorm-stage' );
+		$notice .= '</p>';
+		$notice .= '<p>';
+		$notice .= '<a class="button button-primary" href="' . esc_url( $reading_url ) . '">' . esc_html__( 'Go to Reading Settings', 'bigstorm-stage' ) . '</a>';
 		$notice .= '</p>';
 		$notice .= '</div>';
 
