@@ -143,6 +143,7 @@ class Big_Storm_Staging_Protection {
 
 		$crawlers = array(
 			'googlebot',
+			'google-inspectiontool',
 			'bingbot',
 			'slurp',        // Yahoo
 			'duckduckbot',

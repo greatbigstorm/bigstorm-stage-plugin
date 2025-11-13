@@ -3,7 +3,7 @@ Contributors: greatbigstorm
 Tags: staging, robots, seo, development
 Requires at least: 5.2
 Tested up to: 6.7
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -72,6 +72,9 @@ Yes. Go to Settings → Big Storm Staging and set the “Staging domain match”
 No, the plugin only modifies robots.txt on domains ending with .greatbigstorm.com
 
 == Changelog ==
+
+= 1.1.1 =
+* Add: `google-inspectiontool` to blocked crawler list
 
 = 1.1.0 =
 * Refactor: Break single-file plugin into modular components in `includes/` directory
