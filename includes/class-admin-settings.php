@@ -88,7 +88,7 @@ class Big_Storm_Admin_Settings {
 	 * @return bool
 	 */
 	public function is_robots_blocking_enabled() {
-		return (bool) get_option( $this->option_block_robots, false );
+		return (bool) get_option( $this->option_block_robots, true );
 	}
 
 	/**
@@ -146,7 +146,7 @@ class Big_Storm_Admin_Settings {
 		register_setting( 'bigstorm_stage_settings', $this->option_block_robots, array(
 			'type'              => 'boolean',
 			'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
-			'default'           => false,
+			'default'           => true,
 		) );
 
 		add_settings_section(
@@ -259,7 +259,7 @@ class Big_Storm_Admin_Settings {
 	 * @return void
 	 */
 	public function render_block_robots_field() {
-		$value = get_option( $this->option_block_robots, false );
+		$value = get_option( $this->option_block_robots, true );
 		?>
 		<label>
 			<input type="checkbox" name="<?php echo esc_attr( $this->option_block_robots ); ?>" value="1" <?php checked( $value, true ); ?> />
