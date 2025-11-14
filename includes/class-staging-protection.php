@@ -199,11 +199,6 @@ class Big_Storm_Staging_Protection {
 			return;
 		}
 
-		// Allow robots.txt to be served so crawlers can see Disallow rules.
-		if ( function_exists( 'is_robots' ) && is_robots() ) {
-			return;
-		}
-
 		// Only for GET/HEAD page-like requests.
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET';
 		if ( 'GET' !== $method && 'HEAD' !== $method ) {
