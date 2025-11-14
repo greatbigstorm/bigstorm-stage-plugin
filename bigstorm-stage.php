@@ -11,7 +11,7 @@
  * Plugin Name:       Big Storm Staging
  * Plugin URI:        https://github.com/greatbigstorm/bigstorm-stage-plugin
  * Description:       Prevents search engine indexing on staging domains by modifying robots.txt and returning HTTP 410 (Gone) to search engine crawlers. Remove from production environments.
- * Version:           1.1.2
+ * Version:           1.1.3
  * Requires at least: 5.2
  * Requires PHP:      7.2
  * Author:            Big Storm
